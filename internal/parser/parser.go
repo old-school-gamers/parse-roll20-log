@@ -140,7 +140,12 @@ func extractMessage(n *netHTML.Node) Message {
 			msg.Player = strings.TrimRight(strings.TrimSpace(textContent(c)), ":")
 		case hasClass(c, "sheet-char-name"), hasClass(c, "sheet-charname"):
 			msg.Character = collapseSpaces(textContent(c))
-		case hasClass(c, "sheet-roll-name"), hasClass(c, "sheet-rollname"):
+		case hasClass(c, "sheet-roll-name"), hasClass(c, "sheet-rollname"),
+			hasClass(c, "sheet-trait-name"), hasClass(c, "sheet-feature-name"):
+			// `sheet-roll-name` is the simple rolltemplate's name field.
+			// `sheet-trait-name` / `sheet-feature-name` are the same
+			// concept for the traits / feature rolltemplates — same
+			// semantic slot, different template-specific class.
 			msg.RollName = collapseSpaces(textContent(c))
 		case hasClass(c, "inlinerollresult"):
 			cls := attr(c, "class")
@@ -194,6 +199,7 @@ func leftoverText(msgDiv *netHTML.Node) string {
 				"tstamp", "by", "avatar", "spacer",
 				"sheet-char-name", "sheet-charname",
 				"sheet-roll-name", "sheet-rollname",
+				"sheet-trait-name", "sheet-feature-name",
 				"inlinerollresult",
 				"formula", "rolled", "clear") {
 				return

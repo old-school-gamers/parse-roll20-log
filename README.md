@@ -152,11 +152,12 @@ What should work for any Roll20 campaign regardless of system:
   `formula` + `rolled` divs).
 
 What may come back **empty for other systems**: `character` and
-`roll_name`. These are extracted from `sheet-char-name` / `sheet-roll-name`
-elements, which are specific to Shadowdark's `sheet-rolltemplate-simple`.
-D&D 5e, Pathfinder, Savage Worlds, etc. each ship their own rolltemplate
-shapes with different field names. If you run this against another system
-and find character / roll-name extraction missing, please [open an
+`roll_name`. These are extracted from a specific set of element class
+names Shadowdark's sheets use (`sheet-char-name`, `sheet-roll-name`,
+`sheet-trait-name`, `sheet-feature-name`). D&D 5e, Pathfinder, Savage
+Worlds, etc. each ship their own rolltemplate shapes with different field
+names. If you run this against another system and find character /
+roll-name extraction missing, please [open an
 issue](https://github.com/old-school-gamers/parse-roll20-log/issues) with
 a representative HTML snippet — adding a template is a small parser change.
 

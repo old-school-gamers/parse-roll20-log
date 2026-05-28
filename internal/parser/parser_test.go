@@ -38,8 +38,28 @@ func findByID(msgs []Message, id string) *Message {
 
 func TestParse_MessageCount(t *testing.T) {
 	msgs := parseFixture(t, "messages.html")
-	if got, want := len(msgs), 9; got != want {
+	if got, want := len(msgs), 10; got != want {
 		t.Fatalf("message count: got %d, want %d", got, want)
+	}
+}
+
+func TestParse_TraitsTemplate(t *testing.T) {
+	// sheet-rolltemplate-traits uses sheet-trait-name where the simple
+	// template uses sheet-roll-name. Both should land in RollName.
+	msgs := parseFixture(t, "messages.html")
+	m := findByID(msgs, "m10-traits")
+	if m == nil {
+		t.Fatal("m10-traits not found")
+	}
+	if m.Character != "Irulan" {
+		t.Errorf("character: got %q, want Irulan", m.Character)
+	}
+	if m.RollName != "Elf Traits" {
+		t.Errorf("roll_name from sheet-trait-name: got %q, want %q", m.RollName, "Elf Traits")
+	}
+	// The trait-name subtree should also not leak into Text.
+	if strings.Contains(m.Text, "Elf Traits") {
+		t.Errorf("trait-name leaked into text: %q", m.Text)
 	}
 }
 
