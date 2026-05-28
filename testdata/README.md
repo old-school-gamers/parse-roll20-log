@@ -1,33 +1,25 @@
 # testdata/
 
-Drop real Roll20 chat-log HTML exports here to run the tool against actual
-data. Nothing in this directory is required for the unit tests — those use
-small synthetic fixtures in `internal/parser/testdata/`. This directory is
-just a conventional landing spot for ad-hoc samples and smoke tests.
+This directory is gitignored — drop a Roll20 chat-log HTML export here
+to run the tool against real data on your machine. Nothing in this
+directory will ever be tracked by git (see `.gitignore`).
 
-## How to obtain a Roll20 chat log
+The unit tests don't need anything here; they use small synthetic fixtures
+in `internal/parser/testdata/`. This directory exists purely as a
+conventional landing spot for your own exports.
 
-1. Open your Roll20 campaign in a browser.
-2. Click the gear icon at the bottom of the chat panel, then "Show Archive"
-   (or navigate directly to `https://app.roll20.net/campaigns/chatarchive/<campaign-id>`).
-3. Scroll to the bottom of the archive so the page loads every message.
-4. Use your browser's **File → Save Page As… → "Webpage, Complete"**.
-5. Browsers save the file as something like
-   `Chat Log for <Campaign Name>.html`, alongside a `Chat Log for <Campaign Name>_files/`
-   directory of inline images. The HTML is the only file `parse-roll20-log`
-   needs; the `_files/` directory can be deleted.
+## How to save a Roll20 chat log
 
-A full campaign archive is typically several megabytes. The file lives
-entirely on disk after the save — no network round-trips during parsing.
+See ["Saving a chat log from Roll20"](../README.md#saving-a-chat-log-from-roll20)
+in the project README for the browser-save walkthrough.
 
-## Privacy note
+## Why nothing real is committed here
 
-Roll20 chat archives contain real player handles, character names, and chat
-content. If you commit a sample into a public repo, sanitize it first
-(replace player and character names, redact in-character text). Files in
-this directory are **not** auto-gitignored — that's a deliberate choice
-because a sanitized public sample is genuinely useful, but it means you
-have to be careful what you `git add`.
+A Roll20 chat-log export is a self-contained HTML page that bundles Roll20's
+own jQuery, CSS, and template HTML alongside the chat content. Those bits
+are Roll20's intellectual property, not ours to redistribute — so even a
+chat-content-sanitized sample wouldn't be safe to commit. If you fork the
+repo, keep this directory empty in git.
 
 ## Quick start
 

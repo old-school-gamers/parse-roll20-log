@@ -76,8 +76,10 @@ chat archive — there's no API call, just a file on disk.
    HTML file is needed; the `_files/` directory can be deleted.
 
 The repo's [`testdata/`](testdata/) directory is the conventional place to
-drop a saved log for ad-hoc runs — see [testdata/README.md](testdata/README.md)
-for a privacy note before committing one to a public fork.
+drop your saved log for ad-hoc runs. It's gitignored — nothing dropped
+there gets tracked. A Roll20 export bundles Roll20's own jQuery and CSS
+framework alongside the chat content, so it's never safe to commit to a
+public repo regardless of whether the chat itself is sanitized.
 
 ## Usage
 
