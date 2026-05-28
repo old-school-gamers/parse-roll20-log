@@ -1,5 +1,10 @@
 # parse-roll20-log
 
+[![CI](https://github.com/old-school-gamers/parse-roll20-log/actions/workflows/ci.yml/badge.svg)](https://github.com/old-school-gamers/parse-roll20-log/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/old-school-gamers/parse-roll20-log.svg)](https://pkg.go.dev/github.com/old-school-gamers/parse-roll20-log)
+[![Go Report Card](https://goreportcard.com/badge/github.com/old-school-gamers/parse-roll20-log)](https://goreportcard.com/report/github.com/old-school-gamers/parse-roll20-log)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Parse [Roll20](https://roll20.net) chat-log HTML exports into structured,
 machine-readable session data — timestamps, players, characters, rolls, and
 the full dice formulas behind each result.
@@ -7,6 +12,22 @@ the full dice formulas behind each result.
 Built for tabletop game-session pipelines: feed it the HTML page Roll20 hands
 you when you save a chat log, get back JSONL or TSV you can pipe into
 note-taking, narrative tools, or just `grep`.
+
+## Why
+
+I had a Python script that parsed Roll20 chat logs for D&D session notes.
+It worked, but the regex approach quietly mishandled trailing JavaScript
+that Roll20 appends to every export — the last "message" would balloon
+into ~60,000 characters of HTML/JS bleed. The pipeline workaround was an
+`awk` filter that dropped the garbage line but also dropped most of the
+real messages with it. The script also threw away the dice formulas Roll20
+records on every roll result, which turn out to be useful.
+
+This is a Go rewrite that uses a real HTML tree parser instead of regex
+(so the tail-bleed bug is gone by construction), keeps the per-die formulas
+and crit / fumble markers, emits structured JSONL or TSV, and ships as a
+single static binary with no Python interpreter, no virtualenv, and nothing
+to install at runtime.
 
 ## Install
 
@@ -25,6 +46,19 @@ task build     # build ./parse-roll20-log in the working tree
 ```
 
 A single static binary with no runtime dependencies.
+
+### Shell completion
+
+Cobra auto-generates completion scripts. For bash:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+parse-roll20-log completion bash > ~/.local/share/bash-completion/completions/parse-roll20-log
+```
+
+`zsh`, `fish`, and `powershell` work too — run
+`parse-roll20-log completion <shell> --help` for the install path each
+shell expects.
 
 ## Saving a chat log from Roll20
 
