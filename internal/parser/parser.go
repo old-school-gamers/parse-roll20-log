@@ -304,6 +304,33 @@ func normalizeTimestamp(s string) string {
 	return s
 }
 
+// SanityCheck returns warnings about parsed messages that look suspicious —
+// typically a sign Roll20 has changed an HTML element name the parser
+// depends on. Returns nil when the input looks healthy or is too small
+// to judge.
+//
+// Current heuristic: warn if we parsed at least 100 messages but found
+// zero rolls. A real Roll20 campaign log of that size almost always
+// contains at least some dice rolls; the most likely cause of zero is
+// that the `inlinerollresult` / `rolled` class names have changed.
+func SanityCheck(msgs []Message) []string {
+	if len(msgs) < 100 {
+		return nil
+	}
+	var withResults int
+	for _, m := range msgs {
+		if len(m.Results) > 0 {
+			withResults++
+		}
+	}
+	if withResults == 0 {
+		return []string{
+			fmt.Sprintf("parsed %d messages but found 0 rolls — Roll20 may have changed the inlinerollresult / rolled HTML classes the parser depends on. If this is a real Roll20 export rather than a chat-only campaign, please file an issue with a representative HTML snippet.", len(msgs)),
+		}
+	}
+	return nil
+}
+
 // SessionDate extracts the YYYY-MM-DD prefix from a normalized timestamp.
 // Returns "" if the timestamp isn't in ISO form (e.g. a bare time-only stamp
 // before [InheritContext] has stitched a date onto it, or an unparsed Roll20

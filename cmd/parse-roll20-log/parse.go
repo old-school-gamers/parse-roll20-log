@@ -62,6 +62,12 @@ func runParse(w io.Writer, path, session, format string) error {
 		return err
 	}
 	msgs = parser.InheritContext(msgs)
+	// Sanity-check before filtering — the warning should reflect what we
+	// parsed from the whole file, not whatever's left after a --session
+	// filter knocks the count down.
+	for _, warning := range parser.SanityCheck(msgs) {
+		fmt.Fprintln(os.Stderr, "warning:", warning)
+	}
 	if session != "" {
 		msgs = filterBySession(msgs, session)
 	}

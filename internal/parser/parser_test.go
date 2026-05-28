@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -304,6 +305,59 @@ func TestNormalizeTimestamp(t *testing.T) {
 		if got != c.want {
 			t.Errorf("normalizeTimestamp(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestSanityCheck_HealthyInput(t *testing.T) {
+	msgs := parseFixture(t, "messages.html")
+	// Our fixture has < 100 messages so it's "too small" — but it does
+	// contain rolls. Either way, no warning is expected.
+	if got := SanityCheck(msgs); got != nil {
+		t.Errorf("healthy fixture flagged: %v", got)
+	}
+}
+
+func TestSanityCheck_NoRollsInLargeBatch(t *testing.T) {
+	// 200 plain-chat messages, zero rolls — the signature of a Roll20
+	// HTML format change that broke roll extraction.
+	msgs := make([]Message, 200)
+	for i := range msgs {
+		msgs[i] = Message{ID: fmt.Sprintf("m%d", i), Type: "general", Text: "chat"}
+	}
+	warnings := SanityCheck(msgs)
+	if len(warnings) != 1 {
+		t.Fatalf("warnings: got %d, want 1", len(warnings))
+	}
+	if !strings.Contains(warnings[0], "0 rolls") {
+		t.Errorf("warning missing key phrase: %q", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "200 messages") {
+		t.Errorf("warning missing message count: %q", warnings[0])
+	}
+}
+
+func TestSanityCheck_SmallBatchSkipped(t *testing.T) {
+	// Small logs could legitimately be chat-only short sessions; don't
+	// flag them.
+	msgs := make([]Message, 50)
+	for i := range msgs {
+		msgs[i] = Message{ID: fmt.Sprintf("m%d", i), Type: "general", Text: "chat"}
+	}
+	if got := SanityCheck(msgs); got != nil {
+		t.Errorf("small batch flagged: %v", got)
+	}
+}
+
+func TestSanityCheck_LargeBatchWithSomeRolls(t *testing.T) {
+	// 200 messages, just one has a roll — that's plenty to clear the
+	// "zero rolls" check.
+	msgs := make([]Message, 200)
+	for i := range msgs {
+		msgs[i] = Message{ID: fmt.Sprintf("m%d", i), Type: "general", Text: "chat"}
+	}
+	msgs[42].Results = []RollResult{{Value: "7", Crit: "none"}}
+	if got := SanityCheck(msgs); got != nil {
+		t.Errorf("batch with one roll flagged: %v", got)
 	}
 }
 
