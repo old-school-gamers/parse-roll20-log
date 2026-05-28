@@ -106,4 +106,4 @@ parser stops at the last actual message div.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[Apache License 2.0](LICENSE) — Copyright 2026 Matthew Hunter.
