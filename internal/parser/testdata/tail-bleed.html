@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><body>
+<div class="message general" data-messageid="real-1">
+  <span class="tstamp">June 10, 2025 8:49PM</span>
+  <span class="by">alice w.:</span>
+  hello world
+</div>
+<div class="message general" data-messageid="real-2">
+  goodbye
+</div>
+</body></html>
+
+<!-- A regex parser that ends its match on /(?=<div class="message |$)/ would
+     greedily swallow this template content into the previous message: -->
+<script>
+var template = "<div class='message general'><span>fake</span></div>";
+for (var i = 0; i < 1000; i++) { document.write(template); }
+</script>
+{{#each messages}}
+  <div>{{this.text}}</div>
+{{/each}}
