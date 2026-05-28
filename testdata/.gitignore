@@ -1,0 +1,5 @@
+# Real Roll20 chat-log exports dropped here are for local testing only.
+# Don't commit them — they contain real player names and chat content.
+*
+!.gitignore
+!README.md
