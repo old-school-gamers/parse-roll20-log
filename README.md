@@ -128,6 +128,42 @@ unstructured messages keep their raw text in `text`. `crit` is one of
 `timestamp`, `player`, `character`, `roll_name`, `results`, `text`. Multiple
 results in one message join with `; ` in the `results` column.
 
+### Output stability
+
+The JSONL field set may **grow** across 0.x releases — new fields are
+additive and won't break a consumer that ignores unknown keys. Field
+**renames** and **removals** are breaking changes and bump the minor
+version (in 0.x) or the major version (post-1.0). The set of supported
+`type` and `crit` values may also grow across 0.x.
+
+## Roll20 compatibility
+
+Currently tested against **one Shadowdark campaign export** (the campaign
+this tool was originally written for). Coverage for that case is good —
+1,755 rollresult, 750 emote, and 3,926 general messages across 78 sessions
+parse cleanly with full structured fields.
+
+What should work for any Roll20 campaign regardless of system:
+
+- Timestamps, players, and message types (`general`, `emote`, `rollresult`).
+- Inline roll **values** and **formulas** (the `inlinerollresult` element
+  is Roll20-core, not sheet-specific).
+- Discord-routed `/r` outputs (the `rollresult` message type with
+  `formula` + `rolled` divs).
+
+What may come back **empty for other systems**: `character` and
+`roll_name`. These are extracted from `sheet-char-name` / `sheet-roll-name`
+elements, which are specific to Shadowdark's `sheet-rolltemplate-simple`.
+D&D 5e, Pathfinder, Savage Worlds, etc. each ship their own rolltemplate
+shapes with different field names. If you run this against another system
+and find character / roll-name extraction missing, please [open an
+issue](https://github.com/old-school-gamers/parse-roll20-log/issues) with
+a representative HTML snippet — adding a template is a small parser change.
+
+The tool also runs a sanity check after parsing: if it sees many messages
+but no rolls at all, it prints a warning to stderr, since that usually
+means Roll20 changed an HTML class name we depend on.
+
 ## How it works
 
 Uses [`golang.org/x/net/html`](https://pkg.go.dev/golang.org/x/net/html) to
@@ -143,3 +179,8 @@ parser stops at the last actual message div.
 ## License
 
 [Apache License 2.0](LICENSE) — Copyright 2026 Matthew Hunter.
+
+---
+
+Roll20 is a trademark of The Orr Group, LLC. This project is not affiliated
+with or endorsed by Roll20.
