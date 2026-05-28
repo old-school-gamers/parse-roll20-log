@@ -1,0 +1,21 @@
+# Binary
+/parse-roll20-log
+*.exe
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# GoReleaser
+/dist/
+
+# Task runner
+.task/
+
+# Local-only fixtures (real chat exports — keep out of the public repo)
+/scratch/
