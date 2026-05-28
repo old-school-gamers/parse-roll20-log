@@ -14,15 +14,36 @@ note-taking, narrative tools, or just `grep`.
 go install github.com/old-school-gamers/parse-roll20-log/cmd/parse-roll20-log@latest
 ```
 
-Or build from source:
+Or from a checkout, using the bundled [Taskfile](https://taskfile.dev/):
 
 ```bash
 git clone https://github.com/old-school-gamers/parse-roll20-log
 cd parse-roll20-log
-task build
+task install   # go install ./cmd/parse-roll20-log → $GOBIN
+# or
+task build     # build ./parse-roll20-log in the working tree
 ```
 
 A single static binary with no runtime dependencies.
+
+## Saving a chat log from Roll20
+
+`parse-roll20-log` reads the HTML page Roll20 produces when you save the
+chat archive — there's no API call, just a file on disk.
+
+1. Open your campaign in Roll20.
+2. Click the gear icon at the bottom of the chat panel and choose
+   **Show Archive** (or navigate to
+   `https://app.roll20.net/campaigns/chatarchive/<campaign-id>`).
+3. Scroll all the way to the bottom of the archive so every message renders.
+4. In your browser: **File → Save Page As… → "Webpage, Complete"**.
+5. The browser saves a `Chat Log for <Campaign>.html` plus a
+   `Chat Log for <Campaign>_files/` directory of inline images. Only the
+   HTML file is needed; the `_files/` directory can be deleted.
+
+The repo's [`testdata/`](testdata/) directory is the conventional place to
+drop a saved log for ad-hoc runs — see [testdata/README.md](testdata/README.md)
+for a privacy note before committing one to a public fork.
 
 ## Usage
 
@@ -52,8 +73,8 @@ Default format is JSONL — one self-contained JSON record per message:
   "id": "-OSRfTjklc5ljxAzUvrS",
   "timestamp": "2025-06-10T20:49:00",
   "type": "general",
-  "player": "alice w.",
-  "character": "Helfen Adrick",
+  "player": "alice",
+  "character": "Tordek",
   "roll_name": "Strength (0)",
   "results": [
     {"value": "8", "formula": "Rolling 1d20+0 = (8)+0", "crit": "none"}
