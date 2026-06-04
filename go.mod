@@ -2,7 +2,7 @@ module github.com/old-school-gamers/parse-roll20-log
 
 go 1.25.0
 
-toolchain go1.25.7
+toolchain go1.25.11
 
 require (
 	github.com/spf13/cobra v1.10.2
