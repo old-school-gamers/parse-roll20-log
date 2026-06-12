@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head><title>Chat Log</title></head>
+<body>
+<div class="chat-container">
+
+<!-- Session 1: May 26, 2026 -- full timestamps throughout -->
+<div class="message general" data-messageid="n1-s1-open">
+  <span class="tstamp" aria-hidden="true">May 26, 2026 8:45PM</span>
+  <span class="by">alice:</span>
+  opening the session
+</div>
+
+<div class="message general" data-messageid="n1-s2-mid">
+  <span class="tstamp" aria-hidden="true">May 26, 2026 10:30PM</span>
+  <span class="by">bob:</span>
+  mid session
+</div>
+
+<div class="message general" data-messageid="n1-s3-close">
+  <span class="tstamp" aria-hidden="true">May 26, 2026 11:58PM</span>
+  <span class="by">alice:</span>
+  closing night one
+</div>
+
+<!-- Session 2: June 02, 2026 -- Roll20 emitted time-only stamps (no date in HTML) -->
+<!-- These should NOT inherit May 26's date; they should have no date or their own date -->
+<div class="message general" data-messageid="n2-s1-open">
+  <span class="tstamp" aria-hidden="true">8:43PM</span>
+  <span class="by">carol:</span>
+  session two opens
+</div>
+
+<div class="message general" data-messageid="n2-s2-mid">
+  <span class="tstamp" aria-hidden="true">10:15PM</span>
+  <span class="by">carol:</span>
+  mid session two
+</div>
+
+<div class="message general" data-messageid="n2-s3-close">
+  <span class="tstamp" aria-hidden="true">11:58PM</span>
+  <span class="by">carol:</span>
+  closing night two
+</div>
+
+<!-- Session 3: June 09, 2026 -- again time-only, different night entirely -->
+<div class="message general" data-messageid="n3-s1-open">
+  <span class="tstamp" aria-hidden="true">8:45PM</span>
+  <span class="by">dave:</span>
+  session three opens
+</div>
+
+<div class="message general" data-messageid="n3-s3-close">
+  <span class="tstamp" aria-hidden="true">11:52PM</span>
+  <span class="by">dave:</span>
+  closing night three
+</div>
+
+</div>
+</body>
+</html>

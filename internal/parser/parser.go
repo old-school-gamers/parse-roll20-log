@@ -60,18 +60,31 @@ func Parse(r io.Reader) ([]Message, error) {
 // Used because Roll20 omits the timestamp/sender on consecutive messages from
 // the same player.
 //
-// Time-only stamps (e.g. "20:49:00" with no date — Roll20 emits these once
+// Time-only stamps (e.g. "20:49:00" with no date -- Roll20 emits these once
 // the date hasn't changed) get the date from the most recent full timestamp
-// prefixed onto them. Midnight rollovers within a session will be attributed
-// to the prior day; Roll20 doesn't give us enough context to detect them.
+// prefixed onto them.
+//
+// Session-boundary detection: when a time-only stamp is more than
+// sessionResetThreshold seconds earlier than the previous known time-of-day
+// (from either a full or time-only timestamp), the clock has reset, which
+// indicates a new game session has started. At that boundary lastDate and
+// lastPlayer are cleared so the new session's messages are not incorrectly
+// attributed to the prior session's date.
 func InheritContext(msgs []Message) []Message {
 	out := make([]Message, len(msgs))
-	var lastDate, lastTS, lastPlayer string
+	var lastDate, lastTS, lastPlayer, lastTimeOfDay string
 	for i, m := range msgs {
 		switch {
 		case m.Timestamp == "":
 			m.Timestamp = lastTS
 		case isTimeOnly(m.Timestamp):
+			if isSessionReset(m.Timestamp, lastTimeOfDay) {
+				// Clock reset: new session. Clear inherited context so we do
+				// not assign the prior session's date to this night's messages.
+				lastDate = ""
+				lastPlayer = ""
+			}
+			lastTimeOfDay = m.Timestamp
 			if lastDate != "" {
 				m.Timestamp = lastDate + "T" + m.Timestamp
 			}
@@ -84,6 +97,12 @@ func InheritContext(msgs []Message) []Message {
 			if d := SessionDate(m.Timestamp); d != "" {
 				lastDate = d
 			}
+			// Extract the time-of-day portion from a full ISO timestamp so
+			// that the next time-only stamp can be compared against it for
+			// session-boundary detection.
+			if len(m.Timestamp) >= 19 && m.Timestamp[10] == 'T' {
+				lastTimeOfDay = m.Timestamp[11:19]
+			}
 		}
 		if m.Player != "" {
 			lastPlayer = m.Player
@@ -93,6 +112,62 @@ func InheritContext(msgs []Message) []Message {
 		out[i] = m
 	}
 	return out
+}
+
+// sessionResetThreshold is the minimum backward jump in seconds that we treat
+// as a session boundary rather than a harmless within-session clock oddity.
+// One hour is conservative: within a continuous session, messages may arrive
+// slightly out of order (seconds, maybe a minute or two), but a jump back by
+// more than an hour reliably signals a new game night starting. DST "fall
+// back" can cause an apparent 1-hour repetition, but that only pushes the
+// threshold right at the boundary -- the session-reset path is harmless there
+// because the date would already be correct from prior full timestamps.
+const sessionResetThreshold = 60 * 60 // 1 hour in seconds
+
+// isSessionReset reports whether the time-only stamp cur is far enough behind
+// prev to indicate a new session rather than ordinary message ordering. Both
+// cur and prev must be "HH:MM:SS" strings; if either is empty or malformed,
+// it returns false (no reset).
+func isSessionReset(cur, prev string) bool {
+	if prev == "" || cur == "" {
+		return false
+	}
+	cs := timeOnlyToSeconds(cur)
+	ps := timeOnlyToSeconds(prev)
+	if cs < 0 || ps < 0 {
+		return false
+	}
+	// Negative delta means the clock went backward.
+	delta := cs - ps
+	return delta < -sessionResetThreshold
+}
+
+// timeOnlyToSeconds converts "HH:MM:SS" to total seconds since midnight.
+// Returns -1 on parse failure.
+func timeOnlyToSeconds(s string) int {
+	if len(s) != 8 || s[2] != ':' || s[5] != ':' {
+		return -1
+	}
+	h := atoi2(s[0:2])
+	m := atoi2(s[3:5])
+	sec := atoi2(s[6:8])
+	if h < 0 || m < 0 || sec < 0 {
+		return -1
+	}
+	return h*3600 + m*60 + sec
+}
+
+// atoi2 parses a two-character decimal string. Returns -1 on error.
+func atoi2(s string) int {
+	if len(s) != 2 {
+		return -1
+	}
+	d0 := int(s[0] - '0')
+	d1 := int(s[1] - '0')
+	if d0 < 0 || d0 > 9 || d1 < 0 || d1 > 9 {
+		return -1
+	}
+	return d0*10 + d1
 }
 
 // isTimeOnly reports whether ts is a bare "HH:MM:SS" with no date prefix.
