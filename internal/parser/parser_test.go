@@ -396,3 +396,146 @@ func TestSessionDate(t *testing.T) {
 		}
 	}
 }
+
+// TestInheritContext_TwoNights_NoCrossBleed is a regression test for issue #6.
+//
+// When two distinct game nights both start with time-only timestamps (Roll20
+// omits the date once it hasn't changed, and sometimes omits it entirely for
+// sessions past the first in a multi-session export), InheritContext must NOT
+// carry the prior session's date forward onto the new night's messages.
+//
+// The fixture has three sessions:
+//   - Night 1 (May 26, 2026): full timestamps throughout -- provides the
+//     lastDate that would incorrectly bleed forward.
+//   - Night 2 (unknown date, 8:43 PM -> 11:58 PM): time-only stamps only --
+//     the 20:43 start is more than 4 hours before the previous 23:58 close,
+//     triggering the session-reset heuristic.
+//   - Night 3 (unknown date, 8:45 PM -> 11:52 PM): same pattern, second reset.
+//
+// Expected: the night-2 and night-3 messages must NOT receive "2026-05-26" as
+// their date, and the two nights must live in separate date buckets
+// (specifically both under "(no date)" rather than merged under May 26).
+func TestInheritContext_TwoNights_NoCrossBleed(t *testing.T) {
+	msgs := parseFixture(t, "two-nights.html")
+	inherited := InheritContext(msgs)
+
+	// Night-1 messages must be correctly dated.
+	n1open := findByID(inherited, "n1-s1-open")
+	if n1open == nil {
+		t.Fatal("n1-s1-open not found")
+	}
+	if want := "2026-05-26"; SessionDate(n1open.Timestamp) != want {
+		t.Errorf("night-1 date: got %q, want %q", SessionDate(n1open.Timestamp), want)
+	}
+
+	// Night-2 messages must NOT carry May 26 as their date.
+	n2open := findByID(inherited, "n2-s1-open")
+	if n2open == nil {
+		t.Fatal("n2-s1-open not found")
+	}
+	if got := SessionDate(n2open.Timestamp); got == "2026-05-26" {
+		t.Errorf("night-2 inherited night-1 date (off-by-7 regression): got %q", got)
+	}
+
+	// Night-3 messages must NOT carry May 26 as their date either.
+	n3open := findByID(inherited, "n3-s1-open")
+	if n3open == nil {
+		t.Fatal("n3-s1-open not found")
+	}
+	if got := SessionDate(n3open.Timestamp); got == "2026-05-26" {
+		t.Errorf("night-3 inherited night-1 date (session-merge regression): got %q", got)
+	}
+}
+
+// TestInheritContext_TwoNights_SeparateBuckets verifies that the two time-only
+// nights land in different date buckets (i.e. are not merged into one).
+//
+// Because we cannot know the real calendar date from time-only stamps, both
+// nights will be bucketed as "(no date)" individually -- but that still means
+// the timestamps should be treated as separate sequences. The key invariant is
+// that no night-2 message has the same stitched timestamp as a night-1 message,
+// and no night-3 message has the same stitched timestamp as a night-2 message.
+func TestInheritContext_TwoNights_SeparateBuckets(t *testing.T) {
+	msgs := parseFixture(t, "two-nights.html")
+	inherited := InheritContext(msgs)
+
+	// Collect stitched timestamps for each night's first message.
+	n2open := findByID(inherited, "n2-s1-open")
+	n3open := findByID(inherited, "n3-s1-open")
+	if n2open == nil || n3open == nil {
+		t.Fatal("night-2 or night-3 open message not found")
+	}
+
+	// The two nights start at roughly the same time of day (8:43 PM and 8:45 PM).
+	// After the fix, both are bare time-only strings (no date prefix) rather than
+	// carrying the prior date -- so their SessionDate() returns "".
+	// If they shared a date, they'd be merged -- that's the bug we're preventing.
+	n2date := SessionDate(n2open.Timestamp)
+	n3date := SessionDate(n3open.Timestamp)
+
+	if n2date != "" {
+		t.Errorf("night-2 first message should have no date, got %q", n2date)
+	}
+	if n3date != "" {
+		t.Errorf("night-3 first message should have no date, got %q", n3date)
+	}
+
+	// Also confirm night-2 and night-3 player context was cleared at the reset:
+	// n2-s1-open has its own "by" tag so it sets its own player.
+	if n2open.Player != "carol" {
+		t.Errorf("night-2 open player: got %q, want carol", n2open.Player)
+	}
+	if n3open.Player != "dave" {
+		t.Errorf("night-3 open player: got %q, want dave", n3open.Player)
+	}
+}
+
+func TestIsSessionReset(t *testing.T) {
+	cases := []struct {
+		cur, prev string
+		want      bool
+	}{
+		// Normal forward progression -- not a reset.
+		{"21:00:00", "20:45:00", false},
+		// Small backward jump (within session, e.g. two players send at the same
+		// second and messages arrive slightly out of order) -- not a reset.
+		{"20:44:00", "20:45:00", false},
+		// Exactly 1 hour backward -- at the boundary, not a reset (delta == -threshold).
+		{"22:00:00", "23:00:00", false},
+		// More than 1 hour backward -- session reset.
+		{"20:43:00", "23:58:00", true},
+		// Empty prev -- no reset.
+		{"20:43:00", "", false},
+		// Empty cur -- no reset.
+		{"", "23:58:00", false},
+		// Both empty -- no reset.
+		{"", "", false},
+	}
+	for _, c := range cases {
+		got := isSessionReset(c.cur, c.prev)
+		if got != c.want {
+			t.Errorf("isSessionReset(%q, %q) = %v, want %v", c.cur, c.prev, got, c.want)
+		}
+	}
+}
+
+func TestTimeOnlyToSeconds(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"00:00:00", 0},
+		{"01:00:00", 3600},
+		{"20:45:00", 74700},
+		{"23:58:00", 86280},
+		{"", -1},
+		{"garbage", -1},
+		{"20:45", -1}, // no seconds
+	}
+	for _, c := range cases {
+		got := timeOnlyToSeconds(c.in)
+		if got != c.want {
+			t.Errorf("timeOnlyToSeconds(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
