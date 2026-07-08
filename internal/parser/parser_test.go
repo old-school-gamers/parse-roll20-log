@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func openFixture(t *testing.T, name string) *os.File {
@@ -34,6 +35,24 @@ func findByID(msgs []Message, id string) *Message {
 		}
 	}
 	return nil
+}
+
+// encodePushID builds a valid 20-character Firebase push ID whose embedded
+// timestamp is t (local). Only the leading 8 timestamp characters are decoded
+// by the parser; the 12 trailing "random" characters are filled with a fixed
+// alphabet character. Encoding and decoding both go through time.Local, so the
+// round trip is timezone-independent.
+func encodePushID(t time.Time) string {
+	ms := t.UnixMilli()
+	var b [pushIDLen]byte
+	for i := 7; i >= 0; i-- {
+		b[i] = pushChars[ms&63]
+		ms >>= 6
+	}
+	for i := 8; i < pushIDLen; i++ {
+		b[i] = pushChars[0]
+	}
+	return string(b[:])
 }
 
 func TestParse_MessageCount(t *testing.T) {
@@ -397,7 +416,11 @@ func TestSessionDate(t *testing.T) {
 	}
 }
 
-// TestInheritContext_TwoNights_NoCrossBleed is a regression test for issue #6.
+// TestInheritContext_TwoNights_NoCrossBleed covers the ID-less fallback path
+// for issue #6: this fixture's message IDs are synthetic and do not decode to a
+// timestamp, so InheritContext must fall back to the rendered tstamps. (The
+// primary fix, where real Firebase message IDs supply each night's true date,
+// is covered by TestInheritContext_MessageIDDates.)
 //
 // When two distinct game nights both start with time-only timestamps (Roll20
 // omits the date once it hasn't changed, and sometimes omits it entirely for
@@ -487,6 +510,81 @@ func TestInheritContext_TwoNights_SeparateBuckets(t *testing.T) {
 	}
 	if n3open.Player != "dave" {
 		t.Errorf("night-3 open player: got %q, want dave", n3open.Player)
+	}
+}
+
+func TestPushIDEpochMillis(t *testing.T) {
+	// A real Roll20 message ID from a Shadowmaze export -- the first 8
+	// characters decode to a known absolute millisecond timestamp (this
+	// assertion is timezone-independent).
+	if ms, ok := pushIDEpochMillis("-Ox-3OhqL5PV9bVqPaYt"); !ok || ms != 1783486323574 {
+		t.Errorf("pushIDEpochMillis(real) = %d, %v; want 1783486323574, true", ms, ok)
+	}
+	// Non-push-ID inputs must be rejected so InheritContext falls back to the
+	// rendered tstamp rather than decoding a bogus date.
+	bad := []string{
+		"",                      // empty
+		"m1-structured",         // synthetic fixture ID (wrong length)
+		"n2-s1-open",            // synthetic fixture ID (wrong length)
+		"-Ox-3OhqL5PV9bVqPaY",   // 19 chars
+		"-Ox-3OhqL5PV9bVqPaYtX", // 21 chars
+		"-Ox-3Ohq L5PV9bVqPaY",  // 20 chars but contains a space (not in alphabet)
+	}
+	for _, id := range bad {
+		if ms, ok := pushIDEpochMillis(id); ok {
+			t.Errorf("pushIDEpochMillis(%q) = %d, true; want _, false", id, ms)
+		}
+	}
+}
+
+func TestMessageIDTime_RoundTrip(t *testing.T) {
+	want := time.Date(2026, 7, 7, 23, 52, 0, 0, time.Local)
+	got, ok := MessageIDTime(encodePushID(want))
+	if !ok {
+		t.Fatal("MessageIDTime returned ok=false for a valid push ID")
+	}
+	if !got.Truncate(time.Minute).Equal(want) {
+		t.Errorf("round-trip: got %v, want %v", got.Truncate(time.Minute), want)
+	}
+	if _, ok := MessageIDTime("not-a-push-id"); ok {
+		t.Error("MessageIDTime accepted an invalid ID")
+	}
+}
+
+// TestInheritContext_MessageIDDates is the issue-#6 regression test for the
+// real Roll20 case: every message carries a Firebase push ID. Night 1 has full
+// rendered timestamps; night 2 is the export-day session whose tstamps Roll20
+// renders time-only (no date) -- the case that used to merge night 2 into
+// night 1's date. Because the message IDs carry the true dates, each night must
+// land on its own date, and the time-only minute must survive onto it.
+func TestInheritContext_MessageIDDates(t *testing.T) {
+	n1 := time.Date(2026, 6, 30, 21, 6, 0, 0, time.Local)
+	n2 := time.Date(2026, 7, 7, 21, 5, 0, 0, time.Local)
+	msgs := []Message{
+		{ID: encodePushID(n1), Type: "general", Player: "alice", Timestamp: "2026-06-30T21:06:00"},
+		{ID: encodePushID(n1.Add(time.Hour)), Type: "general", Timestamp: "2026-06-30T22:06:00"},
+		// Export-day session: Roll20 rendered these with time-only stamps.
+		{ID: encodePushID(n2), Type: "general", Player: "bob", Timestamp: "21:05:00"},
+		{ID: encodePushID(n2.Add(90 * time.Minute)), Type: "general", Timestamp: "22:35:00"},
+	}
+	got := InheritContext(msgs)
+
+	if d := SessionDate(got[0].Timestamp); d != "2026-06-30" {
+		t.Errorf("night-1 date: got %q, want 2026-06-30", d)
+	}
+	if d := SessionDate(got[2].Timestamp); d != "2026-07-07" {
+		t.Errorf("night-2 date (issue #6): got %q, want 2026-07-07", d)
+	}
+	if d := SessionDate(got[3].Timestamp); d != "2026-07-07" {
+		t.Errorf("night-2 continuation date: got %q, want 2026-07-07", d)
+	}
+	// The time-only tstamp's minute lands on the ID-derived date.
+	if got[2].Timestamp != "2026-07-07T21:05:00" {
+		t.Errorf("night-2 open timestamp: got %q, want 2026-07-07T21:05:00", got[2].Timestamp)
+	}
+	// Player still inherits onto the continuation line.
+	if got[3].Player != "bob" {
+		t.Errorf("night-2 continuation player: got %q, want bob", got[3].Player)
 	}
 }
 
