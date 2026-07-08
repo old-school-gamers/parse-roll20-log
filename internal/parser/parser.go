@@ -5,6 +5,11 @@
 // containing structured sub-elements for timestamp, sender, character name,
 // roll name, and one or more inline roll results. This package walks that
 // tree (no regex) and emits one [Message] per div in document order.
+//
+// The div's data-messageid is a Firebase push ID whose leading characters
+// encode the message's creation time; [InheritContext] uses it as the
+// authoritative date, because Roll20's rendered timestamp omits the date for
+// the export-day session. See [MessageIDTime] and issue #6.
 package parser
 
 import (
@@ -57,51 +62,70 @@ func Parse(r io.Reader) ([]Message, error) {
 
 // InheritContext returns a copy of msgs in which each entry's Timestamp and
 // Player are filled from the most recent preceding message that set them.
-// Used because Roll20 omits the timestamp/sender on consecutive messages from
-// the same player.
+// Used because Roll20 omits the sender on consecutive messages from the same
+// player.
 //
-// Time-only stamps (e.g. "20:49:00" with no date -- Roll20 emits these once
-// the date hasn't changed) get the date from the most recent full timestamp
-// prefixed onto them.
+// Timestamps come, in order of preference:
 //
-// Session-boundary detection: when a time-only stamp is more than
-// sessionResetThreshold seconds earlier than the previous known time-of-day
-// (from either a full or time-only timestamp), the clock has reset, which
-// indicates a new game session has started. At that boundary lastDate and
-// lastPlayer are cleared so the new session's messages are not incorrectly
-// attributed to the prior session's date.
+//  1. From the message ID. A Roll20 data-messageid is a Firebase push ID whose
+//     first eight characters encode the message's creation time in
+//     milliseconds (see [MessageIDTime]). This is present on every real Roll20
+//     message and is the authoritative date source -- crucially, it is immune
+//     to the fact that Roll20's rendered tstamp omits the date entirely for the
+//     most recent (export-day) session, which otherwise merges that night into
+//     the prior session's date (issue #6).
+//
+//  2. From the rendered tstamp, for messages whose ID is absent or is not a
+//     valid push ID (synthetic fixtures, or a future Roll20 ID format). Here we
+//     fall back to the older stitching logic: a full "June 10, 2025 8:49PM"
+//     stamp sets the date directly; a bare time-only "8:49PM" stamp inherits
+//     the last known date. A backward clock jump of more than
+//     sessionResetThreshold marks a session boundary, at which the inherited
+//     date and player are cleared so a new night is not stamped with the prior
+//     night's date.
 func InheritContext(msgs []Message) []Message {
 	out := make([]Message, len(msgs))
 	var lastDate, lastTS, lastPlayer, lastTimeOfDay string
 	for i, m := range msgs {
-		switch {
-		case m.Timestamp == "":
-			m.Timestamp = lastTS
-		case isTimeOnly(m.Timestamp):
-			if isSessionReset(m.Timestamp, lastTimeOfDay) {
-				// Clock reset: new session. Clear inherited context so we do
-				// not assign the prior session's date to this night's messages.
-				lastDate = ""
-				lastPlayer = ""
-			}
-			lastTimeOfDay = m.Timestamp
-			if lastDate != "" {
-				m.Timestamp = lastDate + "T" + m.Timestamp
-			}
+		if t, ok := MessageIDTime(m.ID); ok {
+			// Authoritative time from the message ID. Truncated to the minute
+			// to match Roll20's rendered precision and the fallback path's
+			// output shape.
+			m.Timestamp = t.Truncate(time.Minute).Format("2006-01-02T15:04:05")
 			lastTS = m.Timestamp
-			if d := SessionDate(m.Timestamp); d != "" {
-				lastDate = d
-			}
-		default:
-			lastTS = m.Timestamp
-			if d := SessionDate(m.Timestamp); d != "" {
-				lastDate = d
-			}
-			// Extract the time-of-day portion from a full ISO timestamp so
-			// that the next time-only stamp can be compared against it for
-			// session-boundary detection.
-			if len(m.Timestamp) >= 19 && m.Timestamp[10] == 'T' {
-				lastTimeOfDay = m.Timestamp[11:19]
+			lastDate = m.Timestamp[:10]
+			lastTimeOfDay = m.Timestamp[11:19]
+		} else {
+			switch {
+			case m.Timestamp == "":
+				m.Timestamp = lastTS
+			case isTimeOnly(m.Timestamp):
+				if isSessionReset(m.Timestamp, lastTimeOfDay) {
+					// Clock reset: new session. Clear inherited context so we do
+					// not assign the prior session's date to this night's
+					// messages.
+					lastDate = ""
+					lastPlayer = ""
+				}
+				lastTimeOfDay = m.Timestamp
+				if lastDate != "" {
+					m.Timestamp = lastDate + "T" + m.Timestamp
+				}
+				lastTS = m.Timestamp
+				if d := SessionDate(m.Timestamp); d != "" {
+					lastDate = d
+				}
+			default:
+				lastTS = m.Timestamp
+				if d := SessionDate(m.Timestamp); d != "" {
+					lastDate = d
+				}
+				// Extract the time-of-day portion from a full ISO timestamp so
+				// that the next time-only stamp can be compared against it for
+				// session-boundary detection.
+				if len(m.Timestamp) >= 19 && m.Timestamp[10] == 'T' {
+					lastTimeOfDay = m.Timestamp[11:19]
+				}
 			}
 		}
 		if m.Player != "" {
@@ -112,6 +136,66 @@ func InheritContext(msgs []Message) []Message {
 		out[i] = m
 	}
 	return out
+}
+
+// pushChars is Firebase's push-ID alphabet: 64 characters ordered so that
+// lexicographic string order matches chronological order. Roll20 message IDs
+// (data-messageid) are Firebase push IDs.
+const pushChars = "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz"
+
+// pushIDLen is the fixed length of a Firebase push ID. We require an exact
+// match so shorter synthetic / non-Roll20 IDs are never mistaken for a
+// timestamped ID and decoded into a bogus date.
+const pushIDLen = 20
+
+// pushCharValue maps each byte to its index in pushChars, or -1 if the byte is
+// not part of the alphabet.
+var pushCharValue = func() [256]int {
+	var idx [256]int
+	for i := range idx {
+		idx[i] = -1
+	}
+	for i := range len(pushChars) {
+		idx[pushChars[i]] = i
+	}
+	return idx
+}()
+
+// pushIDEpochMillis decodes the millisecond timestamp embedded in the first
+// eight characters of a Firebase push ID (48 bits, six bits per character). ok
+// is false when id is not a well-formed 20-character push ID, so callers fall
+// back to Roll20's rendered timestamps.
+func pushIDEpochMillis(id string) (ms int64, ok bool) {
+	if len(id) != pushIDLen {
+		return 0, false
+	}
+	for i := range len(id) {
+		if pushCharValue[id[i]] < 0 {
+			return 0, false
+		}
+	}
+	for i := range 8 {
+		ms = ms*64 + int64(pushCharValue[id[i]])
+	}
+	return ms, true
+}
+
+// MessageIDTime returns the creation time encoded in a Roll20 message ID (a
+// Firebase push ID), in the machine's local timezone -- matching the local
+// wall clock Roll20 renders in its own UI. ok is false when id is not a valid
+// push ID.
+//
+// This is the authoritative date source for a message. Roll20's rendered
+// tstamp drops the date for the most recent (export-day) session, so a parser
+// that trusts the tstamp alone stamps that whole night with the prior
+// session's date and merges the two. The message ID carries the true
+// timestamp regardless. See issue #6.
+func MessageIDTime(id string) (time.Time, bool) {
+	ms, ok := pushIDEpochMillis(id)
+	if !ok {
+		return time.Time{}, false
+	}
+	return time.UnixMilli(ms).Local(), true
 }
 
 // sessionResetThreshold is the minimum backward jump in seconds that we treat
