@@ -1,12 +1,10 @@
 module github.com/old-school-gamers/parse-roll20-log
 
-go 1.25.0
-
-toolchain go1.25.11
+go 1.26.0
 
 require (
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/net v0.57.0
+	golang.org/x/net v0.59.0
 )
 
 require (
